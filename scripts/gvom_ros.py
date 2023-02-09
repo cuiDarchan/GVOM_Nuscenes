@@ -19,6 +19,7 @@ class VoxelMapper:
         self.tfBuffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tfBuffer)
         self.tf_transformer = tf.TransformerROS()
+        self.tf_transformer2 = tf.TransformerROS()
 
         self.odom_frame = rospy.get_param("~odom_frame", "/camera_init")
         self.xy_resolution = rospy.get_param("~xy_resolution", 0.40)
@@ -90,20 +91,35 @@ class VoxelMapper:
 
         scan_time = time.time()
         lidar_frame = data.header.frame_id
-        trans = self.tfBuffer.lookup_transform(self.odom_frame, lidar_frame, data.header.stamp,rospy.Duration(1))
+        lidar2baselink = self.tfBuffer.lookup_transform("base_link", lidar_frame, data.header.stamp,rospy.Duration(1))
+        baselink2odom = self.tfBuffer.lookup_transform(self.odom_frame, "base_link", data.header.stamp,rospy.Duration(1))
 
         translation = np.zeros([3])
-        translation[0] = trans.transform.translation.x
-        translation[1] = trans.transform.translation.y
-        translation[2] = trans.transform.translation.z
+        translation[0] = lidar2baselink.transform.translation.x
+        translation[1] = lidar2baselink.transform.translation.y
+        translation[2] = lidar2baselink.transform.translation.z
 
         rotation = np.zeros([4])
-        rotation[0] = trans.transform.rotation.x
-        rotation[1] = trans.transform.rotation.y
-        rotation[2] = trans.transform.rotation.z
-        rotation[3] = trans.transform.rotation.w
+        rotation[0] = lidar2baselink.transform.rotation.x
+        rotation[1] = lidar2baselink.transform.rotation.y
+        rotation[2] = lidar2baselink.transform.rotation.z
+        rotation[3] = lidar2baselink.transform.rotation.w
+        
+        lidar2baselink_matrix = self.tf_transformer.fromTranslationRotation(translation, rotation)
 
-        tf_matrix = self.tf_transformer.fromTranslationRotation(translation,rotation)
+        translation[0] = baselink2odom.transform.translation.x
+        translation[1] = baselink2odom.transform.translation.y
+        translation[2] = baselink2odom.transform.translation.z
+
+        rotation[0] = baselink2odom.transform.rotation.x
+        rotation[1] = baselink2odom.transform.rotation.y
+        rotation[2] = baselink2odom.transform.rotation.z
+        rotation[3] = baselink2odom.transform.rotation.w
+        
+        baselink2odom_matrix = self.tf_transformer2.fromTranslationRotation(translation, rotation)
+        # lidar2odom
+        tf_matrix = np.dot(baselink2odom_matrix, lidar2baselink_matrix) 
+        #print('tf_matrix', tf_matrix)
         
         pc = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(data)
         self.voxel_mapper.Process_pointcloud(pc, odom_data, tf_matrix)
@@ -138,35 +154,38 @@ class VoxelMapper:
         out_map.info.origin.position.y = map_origin[1]
         out_map.info.origin.position.z = 0
 
-        # Hard obstacles
+        ## 根据地图数据，发布各类障碍物
+        # Hard obstacles， 高密度，树木，石头，建筑物
         out_map.data = np.reshape(np.maximum(100 * (obs_map > self.density_threshold), neg_map),-1,order='F').astype(np.int8)
         self.h_obstacle_map_pub.publish(out_map)
         rospy.loginfo("published hard obstacle map.")
 
-        # Soft obstacles
+        # Soft obstacles， 低密度，灌木，高草
         out_map.data = np.reshape(100 * (obs_map <= self.density_threshold) * (obs_map > 0),-1,order='F').astype(np.int8)
         self.s_obstacle_map_pub.publish(out_map)
         rospy.loginfo("published soft obstacle map.")
 
-        # Ground certainty
+        # Ground certainty，地面确定性
         out_map.data = np.reshape(cert_map*100,-1,order='F').astype(np.int8)
         self.g_certainty_pub.publish(out_map)
         self.a_certainty_pub.publish(out_map)
         rospy.loginfo("published ground certainty maps.")
 
-        # Negative obstacles
+        # Negative obstacles，负面障碍物，坑洞，沟壑
         out_map.data = np.reshape(neg_map,-1,order='F').astype(np.int8)
         self.n_obstacle_map_pub.publish(out_map)
         rospy.loginfo("published negative obstacle map.")
 
-        # Roughness
+        # Roughness， 粗糙度
         rough_map = ((np.maximum(np.minimum(rough_map, self.max_roughness), self.min_roughness) + self.min_roughness) / (self.max_roughness - self.min_roughness)) * 100
         out_map.data = np.reshape(rough_map,-1,order='F').astype(np.int8)
         self.r_map_pub.publish(out_map)
         rospy.loginfo("published roughness map.")
 
-        ### Debug maps
 
+        ### Debug maps，调试地图阶段
+        # lidar map , 暂时先不添加
+        
         # Voxel map
         voxel_pc = self.voxel_mapper.make_debug_voxel_map()
         if voxel_pc is not None:
@@ -187,7 +206,8 @@ class VoxelMapper:
             voxel_inf_hm = np.core.records.fromarrays([voxel_inf_hm[:,0],voxel_inf_hm[:,1],voxel_inf_hm[:,2]],names='x,y,z')
             self.voxel_inf_hm_debug_pub.publish(ros_numpy.point_cloud2.array_to_pointcloud2(voxel_inf_hm, rospy.Time.now(), self.odom_frame))
             rospy.loginfo("published voxel inferred height map debug.")
-            
+
+
 if __name__ == '__main__':
     rospy.init_node('voxel_mapping')
 

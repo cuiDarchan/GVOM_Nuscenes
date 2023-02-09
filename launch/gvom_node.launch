@@ -2,12 +2,12 @@
 
     <node pkg="gvom" type="gvom_ros.py" name="gvom_ros" output="screen">
 
-        <remap from="~cloud" to="/warty/lidar_points" />
-        <remap from="~odom" to="/warty/odom" />
+        <remap from="~cloud" to="/lidar_top" />
+        <remap from="~odom" to="/odom" />
 
-        <param name="~odom_frame" value="warty/odom" />
-        <param name="~xy_resolution" value="0.40" />
-        <param name="~z_resolution" value="0.4" />
+        <param name="~odom_frame" value="odom" />
+        <param name="~xy_resolution" value="0.50" />
+        <param name="~z_resolution" value="0.5" />
         <param name="~width" value="256" />
         <param name="~height" value="64" />
         <param name="~buffer_size" value="4" />
