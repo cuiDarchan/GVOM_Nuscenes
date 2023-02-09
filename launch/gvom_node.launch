@@ -24,5 +24,9 @@
         <param name="~freq" value="10." />
 
     </node>
-
+    
+    <arg name="rviz" default="true" />
+    <group if="$(arg rviz)">
+        <node launch-prefix="nice" pkg="rviz" type="rviz" name="rviz" args="-d $(find gvom)/rviz/debug_rviz.rviz" />
+    </group>
 </launch>
